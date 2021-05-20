@@ -36,15 +36,30 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0.):
     return to_return_affine_matrix
 
 
-def affine_transformation_fast(_affine_matrix, _image):
+def affine_transformation_fast(_affine_matrix, _image, _keep_size=True):
     """
     用矩阵运算进行加速的仿射变换
     :param _affine_matrix:  仿射变换矩阵
     :param _image:  待处理的图像
+    :param _keep_size:  是否保持原图像的大小
     :return:  变换后的图像
     """
     h, w = _image.shape[:2]
-    to_return_image = np.zeros_like(_image)
+    if _keep_size:
+        # 缩放
+        scale_x, scale_y = 1, 1
+        # 平移
+        translation_x, translation_y = 0, 0
+        # 缩放
+    else:
+        # 缩放
+        scale_x = np.sqrt(np.sum(_affine_matrix[0, 0:2] ** 2))
+        scale_y = np.sqrt(np.sum(_affine_matrix[1, 0:2] ** 2))
+        # 平移
+        translation_x, translation_y = (_affine_matrix[0, 2]), _affine_matrix[1, 2]
+        # 缩放
+    affine_h, affine_w = int(h * scale_y + abs(translation_x)), int(w * scale_x + abs(translation_y))
+    to_return_image = np.zeros([affine_h, affine_w, 3], dtype=np.uint8)
     x_matrix = np.arange(0, w).reshape(1, w).repeat(h, axis=0)
     y_matrix = np.arange(0, h).reshape(h, 1).repeat(w, axis=1)
     coordinate_matrix = np.stack([x_matrix, y_matrix, np.ones_like(x_matrix)], axis=0)
@@ -54,7 +69,7 @@ def affine_transformation_fast(_affine_matrix, _image):
     affine_x = affine_coordinate_matrix[0, ...]
     affine_y = affine_coordinate_matrix[1, ...]
     x, y = x_matrix.flatten(), y_matrix.flatten()
-    affine_x, affine_y = np.clip(affine_x.flatten(), 0, w - 1), np.clip(affine_y.flatten(), 0, h - 1)
+    affine_x, affine_y = np.clip(affine_x.flatten(), 0, affine_w - 1), np.clip(affine_y.flatten(), 0, affine_h - 1)
     to_return_image[affine_y, affine_x] = _image[y, x]
     return to_return_image
 
@@ -83,16 +98,17 @@ if __name__ == '__main__':
     import time
 
     assert len(sys.argv) == 2, '使用方法python AffineUtils.py 图像路径'
-    affine_matrix = get_affine_matrix(_tx=0, _ty=0, _sx=0.5, _sy=0.5, _rotation=15)
+    affine_matrix = get_affine_matrix(_tx=-100, _ty=-100, _sx=1, _sy=1, _rotation=0)
     image_path = sys.argv[1]
     image = cv2.imread(image_path)
+    image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
     start_time = time.time()
-    affine_image = affine_transformation_fast(affine_matrix, image)
+    affine_image = affine_transformation_fast(affine_matrix, image, _keep_size=False)
     print('fast: ', time.time() - start_time)
-    start_time = time.time()
+    # start_time = time.time()
     # affine_image = affine_transformation(affine_matrix, image)
     # print('normal', time.time() - start_time)
-    cv2.imshow('image', cv2.resize(image, (0, 0), fx=0.5, fy=0.5))
-    cv2.imshow('affine_image', cv2.resize(affine_image, (0, 0), fx=0.5, fy=0.5))
+    cv2.imshow('image', cv2.resize(image, (0, 0), fx=1, fy=1))
+    cv2.imshow('affine_image', cv2.resize(affine_image, (0, 0), fx=1, fy=1))
     cv2.waitKey(0)
     cv2.destroyAllWindows()
