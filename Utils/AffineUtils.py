@@ -1,5 +1,7 @@
 import numpy as np
 
+from Utils.CmmonImageRelateUtils import interpolation
+
 
 def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
     """
@@ -8,7 +10,7 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
     :param _ty: y的位移量
     :param _sx: x的缩放尺度
     :param _sy: y的缩放尺度
-    :param _rotation: 图像旋转角度（顺时针）
+    :param _rotation: 图像旋转角度（逆时针）
     :param _cx: 旋转x轴中心
     :param _cy: 旋转y轴中心
     :return: 仿射变换矩阵
@@ -26,7 +28,7 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
         [0, _sy],
     ])
     # 旋转
-    # Opencv坐标系中的坐标远点在左上角，因此负号在[0, 1]位置时为顺时针旋转，在[1, 0]位置时为逆时针旋转
+    # Opencv坐标系中的坐标远点在左上角，因此负号在[0, 1]位置时为逆时针旋转，在[1, 0]位置时为顺时针旋转
     _rotation = _rotation * np.pi / 180
     rotation = to_return_affine_matrix.copy()
     rotation[0:2, 0:2] = np.asarray([
@@ -34,7 +36,7 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
         [np.sin(_rotation), np.cos(_rotation)],
     ])
     # 设置旋转中心
-    rotate_x, rotate_y = np.dot(np.asarray([_cx, _cy, 1]), np.transpose(rotation))[:2]
+    rotate_x, rotate_y = np.dot(rotation, np.asarray([_cx, _cy, 1]))[:2]
     translate_x, translate_y = rotate_x - _cx, rotate_y - _cy
     rotate_translation = to_return_affine_matrix.copy()
     rotate_translation[:, 2] = np.asarray(
@@ -45,7 +47,7 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
     return to_return_affine_matrix
 
 
-def affine_transformation_fast(_affine_matrix, _image, _keep_size=True):
+def affine_transformation_fast(_affine_matrix, _image, _keep_size=True, _mode='nearest'):
     """
     用矩阵运算进行加速的仿射变换
     :param _affine_matrix:  仿射变换矩阵
@@ -69,17 +71,14 @@ def affine_transformation_fast(_affine_matrix, _image, _keep_size=True):
         # 缩放
     affine_h, affine_w = int(h * scale_y + abs(translation_x)), int(w * scale_x + abs(translation_y))
     to_return_image = np.zeros([affine_h, affine_w, 3], dtype=np.uint8)
-    x_matrix = np.arange(0, w).reshape(1, w).repeat(h, axis=0)
-    y_matrix = np.arange(0, h).reshape(h, 1).repeat(w, axis=1)
+    x_matrix = np.arange(0, affine_w).reshape(1, affine_w).repeat(affine_h, axis=0)
+    y_matrix = np.arange(0, affine_h).reshape(affine_h, 1).repeat(affine_w, axis=1)
     coordinate_matrix = np.stack([x_matrix, y_matrix, np.ones_like(x_matrix)], axis=0)
     coordinate_matrix = np.reshape(coordinate_matrix, (3, -1))
-    affine_coordinate_matrix = np.dot(_affine_matrix, coordinate_matrix).astype(int)
-    affine_coordinate_matrix = np.reshape(affine_coordinate_matrix, (3, h, w))
-    affine_x = affine_coordinate_matrix[0, ...]
-    affine_y = affine_coordinate_matrix[1, ...]
-    x, y = x_matrix.flatten(), y_matrix.flatten()
-    affine_x, affine_y = np.clip(affine_x.flatten(), 0, affine_w - 1), np.clip(affine_y.flatten(), 0, affine_h - 1)
-    to_return_image[affine_y, affine_x] = _image[y, x]
+    affine_coordinate_matrix = np.dot(np.linalg.inv(_affine_matrix), coordinate_matrix)
+    coordinate_matrix = np.transpose(coordinate_matrix, (1, 0))[..., :2]
+    affine_coordinate_matrix = np.transpose(affine_coordinate_matrix, (1, 0))[..., :2]
+    to_return_image = interpolation(affine_coordinate_matrix, coordinate_matrix, _image, to_return_image, _mode=_mode)
     return to_return_image
 
 
@@ -112,12 +111,12 @@ if __name__ == '__main__':
     image = cv2.resize(image, (0, 0), fx=1, fy=1)
     h, w = image.shape[:2]
     start_time = time.time()
-    affine_matrix = get_affine_matrix(_rotation=15, _cx=w/3, _cy=h/2)
+    affine_matrix = get_affine_matrix(_rotation=15, _cx=w/2, _cy=h/2)
+    coordinate = np.asarray([w/3, h/2, 1])
+    warped_coordinate = np.dot(affine_matrix, coordinate)
+    # affine_image = affine_transformation_fast(affine_matrix, image, _keep_size=True, _mode='bilinear')
     affine_image = affine_transformation_fast(affine_matrix, image, _keep_size=True)
     print('fast: ', time.time() - start_time)
-    # start_time = time.time()
-    # affine_image = affine_transformation(affine_matrix, image)
-    # print('normal', time.time() - start_time)
     cv2.imshow('image', cv2.resize(image, (0, 0), fx=1, fy=1))
     cv2.imshow('affine_image', cv2.resize(affine_image, (0, 0), fx=1, fy=1))
     cv2.waitKey(0)
