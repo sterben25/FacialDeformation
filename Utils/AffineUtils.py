@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0.):
+def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0., _cx=0, _cy=0):
     """
     根据给定的参数生成防射变换矩阵
     :param _tx: x的位移量
@@ -9,6 +9,8 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0.):
     :param _sx: x的缩放尺度
     :param _sy: y的缩放尺度
     :param _rotation: 图像旋转角度（顺时针）
+    :param _cx: 旋转x轴中心
+    :param _cy: 旋转y轴中心
     :return: 仿射变换矩阵
     """
     to_return_affine_matrix = np.eye(3)
@@ -31,8 +33,15 @@ def get_affine_matrix(_tx=0, _ty=0, _sx=1., _sy=1., _rotation=0.):
         [np.cos(_rotation), -np.sin(_rotation)],
         [np.sin(_rotation), np.cos(_rotation)],
     ])
-    for m_affine_matrix in [translation, scaling, rotation]:
-        to_return_affine_matrix = np.dot(to_return_affine_matrix, m_affine_matrix)
+    # 设置旋转中心
+    rotate_x, rotate_y = np.dot(np.asarray([_cx, _cy, 1]), np.transpose(rotation))[:2]
+    translate_x, translate_y = rotate_x - _cx, rotate_y - _cy
+    rotate_translation = to_return_affine_matrix.copy()
+    rotate_translation[:, 2] = np.asarray(
+        [translate_x, translate_y, 1]
+    )
+    for m_affine_matrix in [translation, scaling, rotation, rotate_translation]:
+        to_return_affine_matrix = np.dot(np.transpose(to_return_affine_matrix), m_affine_matrix)
     return to_return_affine_matrix
 
 
@@ -98,12 +107,13 @@ if __name__ == '__main__':
     import time
 
     assert len(sys.argv) == 2, '使用方法python AffineUtils.py 图像路径'
-    affine_matrix = get_affine_matrix(_tx=-100, _ty=-100, _sx=1, _sy=1, _rotation=0)
     image_path = sys.argv[1]
     image = cv2.imread(image_path)
-    image = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
+    image = cv2.resize(image, (0, 0), fx=1, fy=1)
+    h, w = image.shape[:2]
     start_time = time.time()
-    affine_image = affine_transformation_fast(affine_matrix, image, _keep_size=False)
+    affine_matrix = get_affine_matrix(_rotation=15, _cx=w/3, _cy=h/2)
+    affine_image = affine_transformation_fast(affine_matrix, image, _keep_size=True)
     print('fast: ', time.time() - start_time)
     # start_time = time.time()
     # affine_image = affine_transformation(affine_matrix, image)
